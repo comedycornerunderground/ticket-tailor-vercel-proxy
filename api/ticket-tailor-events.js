@@ -1,4 +1,4 @@
-// api/ticket-tailor-events.js - DEBUG VERSION
+// api/ticket-tailor-events.js - WITH PAGINATION
 
 export default async function handler(req, res) {
   const API_KEY = process.env.TT_API_KEY;
@@ -14,100 +14,142 @@ export default async function handler(req, res) {
 
   const baseUrl = 'https://api.tickettailor.com/v1';
   
-  const debug = {
-    apiKey: API_KEY ? 'Present (length: ' + API_KEY.length + ')' : 'Missing',
-    standaloneEvents: {},
-    eventSeries: {},
-    occurrences: [],
-    errors: []
-  };
-
   try {
+    const allEvents = [];
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    debug.today = today.toISOString();
     
-    // 1. Fetch standalone events - NO FILTERS
-    console.log('Fetching standalone events...');
-    const eventsUrl = `${baseUrl}/events`;
-    debug.standaloneEvents.url = eventsUrl;
+    console.log('Starting fetch, today:', today.toISOString());
     
-    const eventsRes = await fetch(eventsUrl, { headers });
-    debug.standaloneEvents.status = eventsRes.status;
-    debug.standaloneEvents.ok = eventsRes.ok;
+    // 1. Fetch ALL event series (with pagination)
+    const allSeries = [];
+    let seriesUrl = `${baseUrl}/event_series`;
     
-    if (eventsRes.ok) {
-      const eventsData = await eventsRes.json();
-      debug.standaloneEvents.rawResponse = eventsData;
-      debug.standaloneEvents.count = eventsData.data ? eventsData.data.length : 0;
-    } else {
-      const errorText = await eventsRes.text();
-      debug.standaloneEvents.error = errorText;
-      debug.errors.push('Standalone events fetch failed: ' + errorText);
+    while (seriesUrl) {
+      console.log('Fetching series page:', seriesUrl);
+      const seriesRes = await fetch(seriesUrl, { headers });
+      
+      if (!seriesRes.ok) {
+        console.error('Series fetch failed:', seriesRes.status);
+        break;
+      }
+      
+      const seriesData = await seriesRes.json();
+      const seriesPage = Array.isArray(seriesData.data) ? seriesData.data : [];
+      allSeries.push(...seriesPage);
+      
+      console.log(`Got ${seriesPage.length} series on this page`);
+      
+      // Check for next page
+      if (seriesData.links && seriesData.links.next) {
+        seriesUrl = baseUrl + seriesData.links.next;
+      } else {
+        seriesUrl = null; // No more pages
+      }
     }
     
-    // 2. Fetch event series - NO FILTERS
-    console.log('Fetching event series...');
-    const seriesUrl = `${baseUrl}/event_series`;
-    debug.eventSeries.url = seriesUrl;
+    console.log(`Total series found: ${allSeries.length}`);
     
-    const seriesRes = await fetch(seriesUrl, { headers });
-    debug.eventSeries.status = seriesRes.status;
-    debug.eventSeries.ok = seriesRes.ok;
-    
-    if (seriesRes.ok) {
-      const seriesData = await seriesRes.json();
-      debug.eventSeries.rawResponse = seriesData;
-      const series = Array.isArray(seriesData.data) ? seriesData.data : [];
-      debug.eventSeries.count = series.length;
-      debug.eventSeries.seriesIds = series.map(s => s.id);
+    // 2. For each series, fetch its occurrences
+    for (const series of allSeries) {
+      console.log(`Checking series: ${series.id} - ${series.name}`);
       
-      // 3. For each series, fetch occurrences
-      for (const s of series) {
-        console.log(`Fetching occurrences for series ${s.id}...`);
-        const occUrl = `${baseUrl}/event_series/${s.id}/events`;
-        
+      // Check if series has upcoming occurrences
+      if (series.upcoming_occurrences === 0) {
+        console.log(`  Skipping ${series.id} - no upcoming occurrences`);
+        continue;
+      }
+      
+      let occUrl = `${baseUrl}/event_series/${series.id}/events`;
+      
+      while (occUrl) {
         const occRes = await fetch(occUrl, { headers });
         
-        const occDebug = {
-          seriesId: s.id,
-          seriesName: s.name,
-          url: occUrl,
-          status: occRes.status,
-          ok: occRes.ok
-        };
-        
-        if (occRes.ok) {
-          const occData = await occRes.json();
-          occDebug.rawResponse = occData;
-          occDebug.count = occData.data ? occData.data.length : 0;
-        } else {
-          const errorText = await occRes.text();
-          occDebug.error = errorText;
-          debug.errors.push(`Occurrences for ${s.id} failed: ${errorText}`);
+        if (!occRes.ok) {
+          console.error(`  Failed to fetch occurrences for ${series.id}`);
+          break;
         }
         
-        debug.occurrences.push(occDebug);
+        const occData = await occRes.json();
+        const occurrences = Array.isArray(occData.data) ? occData.data : [];
+        
+        console.log(`  Found ${occurrences.length} occurrences`);
+        
+        occurrences.forEach(occ => {
+          if (occ.start && occ.start.unix) {
+            const eventDate = new Date(occ.start.unix * 1000);
+            
+            if (eventDate >= today && occ.tickets_available) {
+              allEvents.push({
+                id: occ.id,
+                name: series.name,
+                date: occ.start.iso,
+                unix: occ.start.unix,
+                url: occ.url || `https://www.tickettailor.com/events/ccug/${series.id}`
+              });
+              console.log(`    ✓ Added: ${series.name} on ${occ.start.date}`);
+            }
+          }
+        });
+        
+        // Check for next page of occurrences
+        if (occData.links && occData.links.next) {
+          occUrl = baseUrl + occData.links.next;
+        } else {
+          occUrl = null;
+        }
       }
-    } else {
-      const errorText = await seriesRes.text();
-      debug.eventSeries.error = errorText;
-      debug.errors.push('Event series fetch failed: ' + errorText);
     }
     
-    // Return debug info
+    // 3. Also fetch standalone events
+    console.log('Fetching standalone events...');
+    let eventsUrl = `${baseUrl}/events`;
+    
+    while (eventsUrl) {
+      const eventsRes = await fetch(eventsUrl, { headers });
+      
+      if (!eventsRes.ok) break;
+      
+      const eventsData = await eventsRes.json();
+      const events = Array.isArray(eventsData.data) ? eventsData.data : [];
+      
+      events.forEach(event => {
+        if (event.start && event.start.unix && !event.event_series_id) {
+          const eventDate = new Date(event.start.unix * 1000);
+          
+          if (eventDate >= today && event.tickets_available) {
+            allEvents.push({
+              id: event.id,
+              name: event.name,
+              date: event.start.iso,
+              unix: event.start.unix,
+              url: event.url
+            });
+          }
+        }
+      });
+      
+      if (eventsData.links && eventsData.links.next) {
+        eventsUrl = baseUrl + eventsData.links.next;
+      } else {
+        eventsUrl = null;
+      }
+    }
+    
+    // Sort by date
+    allEvents.sort((a, b) => a.unix - b.unix);
+    
+    console.log(`Returning ${allEvents.length} total events`);
+    
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET');
-    res.setHeader('Content-Type', 'application/json');
-    res.status(200).json(debug);
+    res.status(200).json(allEvents);
     
   } catch (error) {
     console.error('Error:', error);
-    debug.errors.push(error.message);
-    debug.exception = {
-      message: error.message,
-      stack: error.stack
-    };
-    res.status(500).json(debug);
+    res.status(500).json({ 
+      error: 'Failed to fetch events',
+      message: error.message 
+    });
   }
 }
