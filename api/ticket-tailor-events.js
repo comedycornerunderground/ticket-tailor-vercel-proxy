@@ -1,154 +1,108 @@
 // api/ticket-tailor-events.js
 
-const BASE_URL = "https://api.tickettailor.com/v1";
-
-async function ttFetch(path, encodedKey) {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    headers: {
-      Accept: "application/json",
-      Authorization: `Basic ${encodedKey}`,
-    },
-  });
-
-  const data = await res.json();
-
-  if (!res.ok) {
-    throw new Error(
-      `Ticket Tailor error ${res.status}: ${JSON.stringify(data)}`
-    );
+export default async function handler(req, res) {
+  const API_KEY = process.env.TT_API_KEY;
+  
+  if (!API_KEY) {
+    return res.status(500).json({ error: 'TT_API_KEY not configured' });
   }
 
-  return data;
-}
+  const headers = {
+    'Authorization': `Basic ${Buffer.from(API_KEY + ':').toString('base64')}`,
+    'Accept': 'application/json'
+  };
 
-function parseStartDate(ev) {
-  const attrs = ev.attributes || ev || {};
-  const start = attrs.start || {};
-
-  let raw =
-    start.unix ??
-    start.iso ??
-    start.datetime ??
-    start.date ??
-    attrs.starts_at ??
-    attrs.start_at;
-
-  if (raw == null) return null;
-
-  let d;
-  if (typeof raw === "number") {
-    d = new Date(raw * 1000);
-  } else if (typeof raw === "string" && /^\d+$/.test(raw)) {
-    d = new Date(parseInt(raw, 10) * 1000);
-  } else {
-    d = new Date(raw);
-  }
-
-  if (isNaN(d.getTime())) return null;
-  return d;
-}
-
-function isUpcomingAndOnSale(ev, todayStart) {
-  const attrs = ev.attributes || ev || {};
-  const date = parseStartDate(ev);
-  if (!date) return false;
-
-  if (date < todayStart) return false;
-
-  // Be a bit generous with "on sale"
-  const ticketsAvailable =
-    attrs.tickets_available === true || attrs.tickets_available === "true";
-  const status = (attrs.status || "").toLowerCase();
-
-  const okStatus =
-    !status ||
-    status === "published" ||
-    status === "on_sale" ||
-    status === "live";
-
-  // If Ticket Tailor doesn’t set tickets_available, just rely on status
-  if (attrs.tickets_available == null) {
-    return okStatus;
-  }
-
-  return ticketsAvailable && okStatus;
-}
-
-module.exports = async (req, res) => {
-  // CORS for Squarespace
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-
-  if (req.method === "OPTIONS") {
-    res.status(200).end();
-    return;
-  }
-
-  if (req.method !== "GET") {
-    res.status(405).json({ error: "Method not allowed" });
-    return;
-  }
-
-  const apiKey = process.env.TT_API_KEY;
-  if (!apiKey) {
-    res.status(500).json({ error: "Missing TT_API_KEY env var" });
-    return;
-  }
-
-  const encoded = Buffer.from(apiKey).toString("base64");
-
+  const baseUrl = 'https://api.tickettailor.com/v1';
+  
   try {
-    // 1) Get all event series
-    const seriesData = await ttFetch("/event_series", encoded);
-    const seriesList = Array.isArray(seriesData.data)
-      ? seriesData.data
-      : Array.isArray(seriesData)
-      ? seriesData
-      : [];
-
-    // 2) For each series, get its occurrences
     const allEvents = [];
-
-    await Promise.all(
-      seriesList.map(async (series) => {
-        const id = series.id || series.event_series_id;
-        if (!id) return;
-
-        try {
-          const occData = await ttFetch(`/event_series/${id}/events`, encoded);
-          const events = Array.isArray(occData.data)
-            ? occData.data
-            : Array.isArray(occData)
-            ? occData
-            : [];
-          allEvents.push(...events);
-        } catch (e) {
-          // Fail soft on one bad series
-          console.error(`Error loading events for series ${id}:`, e.message);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Start of today
+    
+    // 1. Fetch standalone events
+    console.log('Fetching standalone events...');
+    const eventsRes = await fetch(`${baseUrl}/events?status=published`, { headers });
+    
+    if (eventsRes.ok) {
+      const eventsData = await eventsRes.json();
+      const standaloneEvents = Array.isArray(eventsData.data) ? eventsData.data : [];
+      
+      standaloneEvents.forEach(event => {
+        if (event.start && event.start.unix) {
+          const eventDate = new Date(event.start.unix * 1000);
+          
+          // Only include future events that are available
+          if (eventDate >= today && event.tickets_available) {
+            allEvents.push({
+              id: event.id,
+              name: event.name,
+              date: event.start.iso,
+              unix: event.start.unix,
+              url: event.url,
+              status: event.status
+            });
+          }
         }
-      })
-    );
-
-    const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-    // 3) Filter to today+ and on sale
-    const upcoming = allEvents
-      .filter((ev) => isUpcomingAndOnSale(ev, todayStart))
-      .sort((a, b) => {
-        const da = parseStartDate(a) || new Date(0);
-        const db = parseStartDate(b) || new Date(0);
-        return da - db;
       });
-
-    // Return a plain array; Squarespace script already handles Array responses
-    res.status(200).json(upcoming);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({
-      error: "Server error",
-      details: String(err),
+    }
+    
+    // 2. Fetch event series
+    console.log('Fetching event series...');
+    const seriesRes = await fetch(`${baseUrl}/event_series`, { headers });
+    
+    if (seriesRes.ok) {
+      const seriesData = await seriesRes.json();
+      const series = Array.isArray(seriesData.data) ? seriesData.data : [];
+      
+      // 3. For each series, fetch its occurrences
+      for (const s of series) {
+        console.log(`Fetching occurrences for series ${s.id}...`);
+        
+        const occurrencesRes = await fetch(
+          `${baseUrl}/event_series/${s.id}/events?status=published`,
+          { headers }
+        );
+        
+        if (occurrencesRes.ok) {
+          const occurrencesData = await occurrencesRes.json();
+          const occurrences = Array.isArray(occurrencesData.data) ? occurrencesData.data : [];
+          
+          occurrences.forEach(occurrence => {
+            if (occurrence.start && occurrence.start.unix) {
+              const eventDate = new Date(occurrence.start.unix * 1000);
+              
+              // Only include future occurrences that are available
+              if (eventDate >= today && occurrence.tickets_available) {
+                allEvents.push({
+                  id: occurrence.id,
+                  name: occurrence.name || s.name, // Fall back to series name if needed
+                  date: occurrence.start.iso,
+                  unix: occurrence.start.unix,
+                  url: occurrence.url,
+                  status: occurrence.status
+                });
+              }
+            }
+          });
+        }
+      }
+    }
+    
+    // Sort by date (earliest first)
+    allEvents.sort((a, b) => a.unix - b.unix);
+    
+    console.log(`Returning ${allEvents.length} events`);
+    
+    // Return with CORS headers for Squarespace
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET');
+    res.status(200).json(allEvents);
+    
+  } catch (error) {
+    console.error('Error fetching Ticket Tailor events:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch events',
+      message: error.message 
     });
   }
-};
+}
