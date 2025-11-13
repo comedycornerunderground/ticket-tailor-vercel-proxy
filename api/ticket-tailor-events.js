@@ -1,4 +1,4 @@
-// api/ticket-tailor-events.js - WITH PAGINATION
+// api/ticket-tailor-events.js
 
 export default async function handler(req, res) {
   const API_KEY = process.env.TT_API_KEY;
@@ -44,7 +44,7 @@ export default async function handler(req, res) {
       if (seriesData.links && seriesData.links.next) {
         seriesUrl = baseUrl + seriesData.links.next;
       } else {
-        seriesUrl = null; // No more pages
+        seriesUrl = null;
       }
     }
     
@@ -54,7 +54,6 @@ export default async function handler(req, res) {
     for (const series of allSeries) {
       console.log(`Checking series: ${series.id} - ${series.name}`);
       
-      // Check if series has upcoming occurrences
       if (series.upcoming_occurrences === 0) {
         console.log(`  Skipping ${series.id} - no upcoming occurrences`);
         continue;
@@ -85,14 +84,14 @@ export default async function handler(req, res) {
                 name: series.name,
                 date: occ.start.iso,
                 unix: occ.start.unix,
-                url: occ.url || `https://www.tickettailor.com/events/ccug/${series.id}`
+                url: occ.url || `https://www.tickettailor.com/events/ccug/${series.id}`,
+                image: series.images?.thumbnail || series.images?.header || null
               });
               console.log(`    ✓ Added: ${series.name} on ${occ.start.date}`);
             }
           }
         });
         
-        // Check for next page of occurrences
         if (occData.links && occData.links.next) {
           occUrl = baseUrl + occData.links.next;
         } else {
@@ -123,7 +122,8 @@ export default async function handler(req, res) {
               name: event.name,
               date: event.start.iso,
               unix: event.start.unix,
-              url: event.url
+              url: event.url,
+              image: event.images?.thumbnail || event.images?.header || null
             });
           }
         }
