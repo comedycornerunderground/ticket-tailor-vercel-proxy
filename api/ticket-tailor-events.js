@@ -1,4 +1,4 @@
-// api/ticket-tailor-events.js
+// api/ticket-tailor-events.js - DEBUG VERSION
 
 export default async function handler(req, res) {
   const API_KEY = process.env.TT_API_KEY;
@@ -14,95 +14,100 @@ export default async function handler(req, res) {
 
   const baseUrl = 'https://api.tickettailor.com/v1';
   
+  const debug = {
+    apiKey: API_KEY ? 'Present (length: ' + API_KEY.length + ')' : 'Missing',
+    standaloneEvents: {},
+    eventSeries: {},
+    occurrences: [],
+    errors: []
+  };
+
   try {
-    const allEvents = [];
     const today = new Date();
-    today.setHours(0, 0, 0, 0); // Start of today
+    today.setHours(0, 0, 0, 0);
+    debug.today = today.toISOString();
     
-    // 1. Fetch standalone events
+    // 1. Fetch standalone events - NO FILTERS
     console.log('Fetching standalone events...');
-    const eventsRes = await fetch(`${baseUrl}/events?status=published`, { headers });
+    const eventsUrl = `${baseUrl}/events`;
+    debug.standaloneEvents.url = eventsUrl;
+    
+    const eventsRes = await fetch(eventsUrl, { headers });
+    debug.standaloneEvents.status = eventsRes.status;
+    debug.standaloneEvents.ok = eventsRes.ok;
     
     if (eventsRes.ok) {
       const eventsData = await eventsRes.json();
-      const standaloneEvents = Array.isArray(eventsData.data) ? eventsData.data : [];
-      
-      standaloneEvents.forEach(event => {
-        if (event.start && event.start.unix) {
-          const eventDate = new Date(event.start.unix * 1000);
-          
-          // Only include future events that are available
-          if (eventDate >= today && event.tickets_available) {
-            allEvents.push({
-              id: event.id,
-              name: event.name,
-              date: event.start.iso,
-              unix: event.start.unix,
-              url: event.url,
-              status: event.status
-            });
-          }
-        }
-      });
+      debug.standaloneEvents.rawResponse = eventsData;
+      debug.standaloneEvents.count = eventsData.data ? eventsData.data.length : 0;
+    } else {
+      const errorText = await eventsRes.text();
+      debug.standaloneEvents.error = errorText;
+      debug.errors.push('Standalone events fetch failed: ' + errorText);
     }
     
-    // 2. Fetch event series
+    // 2. Fetch event series - NO FILTERS
     console.log('Fetching event series...');
-    const seriesRes = await fetch(`${baseUrl}/event_series`, { headers });
+    const seriesUrl = `${baseUrl}/event_series`;
+    debug.eventSeries.url = seriesUrl;
+    
+    const seriesRes = await fetch(seriesUrl, { headers });
+    debug.eventSeries.status = seriesRes.status;
+    debug.eventSeries.ok = seriesRes.ok;
     
     if (seriesRes.ok) {
       const seriesData = await seriesRes.json();
+      debug.eventSeries.rawResponse = seriesData;
       const series = Array.isArray(seriesData.data) ? seriesData.data : [];
+      debug.eventSeries.count = series.length;
+      debug.eventSeries.seriesIds = series.map(s => s.id);
       
-      // 3. For each series, fetch its occurrences
+      // 3. For each series, fetch occurrences
       for (const s of series) {
         console.log(`Fetching occurrences for series ${s.id}...`);
+        const occUrl = `${baseUrl}/event_series/${s.id}/events`;
         
-        const occurrencesRes = await fetch(
-          `${baseUrl}/event_series/${s.id}/events?status=published`,
-          { headers }
-        );
+        const occRes = await fetch(occUrl, { headers });
         
-        if (occurrencesRes.ok) {
-          const occurrencesData = await occurrencesRes.json();
-          const occurrences = Array.isArray(occurrencesData.data) ? occurrencesData.data : [];
-          
-          occurrences.forEach(occurrence => {
-            if (occurrence.start && occurrence.start.unix) {
-              const eventDate = new Date(occurrence.start.unix * 1000);
-              
-              // Only include future occurrences that are available
-              if (eventDate >= today && occurrence.tickets_available) {
-                allEvents.push({
-                  id: occurrence.id,
-                  name: occurrence.name || s.name, // Fall back to series name if needed
-                  date: occurrence.start.iso,
-                  unix: occurrence.start.unix,
-                  url: occurrence.url,
-                  status: occurrence.status
-                });
-              }
-            }
-          });
+        const occDebug = {
+          seriesId: s.id,
+          seriesName: s.name,
+          url: occUrl,
+          status: occRes.status,
+          ok: occRes.ok
+        };
+        
+        if (occRes.ok) {
+          const occData = await occRes.json();
+          occDebug.rawResponse = occData;
+          occDebug.count = occData.data ? occData.data.length : 0;
+        } else {
+          const errorText = await occRes.text();
+          occDebug.error = errorText;
+          debug.errors.push(`Occurrences for ${s.id} failed: ${errorText}`);
         }
+        
+        debug.occurrences.push(occDebug);
       }
+    } else {
+      const errorText = await seriesRes.text();
+      debug.eventSeries.error = errorText;
+      debug.errors.push('Event series fetch failed: ' + errorText);
     }
     
-    // Sort by date (earliest first)
-    allEvents.sort((a, b) => a.unix - b.unix);
-    
-    console.log(`Returning ${allEvents.length} events`);
-    
-    // Return with CORS headers for Squarespace
+    // Return debug info
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET');
-    res.status(200).json(allEvents);
+    res.setHeader('Content-Type', 'application/json');
+    res.status(200).json(debug);
     
   } catch (error) {
-    console.error('Error fetching Ticket Tailor events:', error);
-    res.status(500).json({ 
-      error: 'Failed to fetch events',
-      message: error.message 
-    });
+    console.error('Error:', error);
+    debug.errors.push(error.message);
+    debug.exception = {
+      message: error.message,
+      stack: error.stack
+    };
+    res.status(500).json(debug);
   }
 }
