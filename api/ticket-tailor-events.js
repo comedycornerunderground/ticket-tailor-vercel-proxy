@@ -1,7 +1,5 @@
 // api/ticket-tailor-events.js
 
-// Vercel will treat this as a serverless function:
-// /api/ticket-tailor-events  →  this handler :contentReference[oaicite:0]{index=0}
 module.exports = async (req, res) => {
   // Basic CORS so Squarespace can call it
   res.setHeader("Access-Control-Allow-Origin", "*"); // later you can lock to your domain
@@ -24,44 +22,20 @@ module.exports = async (req, res) => {
     return;
   }
 
-  // Ticket Tailor wants: Authorization: Basic base64(api_key) :contentReference[oaicite:1]{index=1}
   const encoded = Buffer.from(apiKey).toString("base64");
 
   try {
     const ttRes = await fetch("https://api.tickettailor.com/v1/events", {
       headers: {
-        "Accept": "application/json",
-        "Authorization": `Basic ${encoded}`,
+        Accept: "application/json",
+        Authorization: `Basic ${encoded}`,
       },
     });
 
-    if (!ttRes.ok) {
-      const text = await ttRes.text();
-      res.status(500).json({
-        error: "Ticket Tailor API error",
-        details: text,
-      });
-      return;
-    }
+    const data = await ttRes.json();
 
-    const raw = await ttRes.json();
-
-    // Ticket Tailor returns a list of events; exact shape may be either raw or raw.data
-    const eventsArray = Array.isArray(raw) ? raw : (raw.data || []);
-
-    // Map down to the fields your calendar widget cares about
-    const events = eventsArray.map(ev => ({
-      id: ev.id,
-      name: ev.name,
-      // you may tweak these once you inspect the real JSON
-      starts_at: ev.starts_at || ev.start_at || ev.start_time,
-      url:
-        ev.public_url ||
-        ev.url ||
-        `https://tickettailor.com/events/${ev.id}`,
-    }));
-
-    res.status(200).json(events);
+    // Forward Ticket Tailor's JSON directly
+    res.status(ttRes.status).json(data);
   } catch (err) {
     console.error(err);
     res.status(500).json({
