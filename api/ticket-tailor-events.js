@@ -86,7 +86,8 @@ export default async function handler(req, res) {
                 name: series.name,
                 date: occ.start.iso,
                 unix: occ.start.unix,
-                url: occ.url || `https://www.tickettailor.com/events/ccug/${eventId}`,
+                // Use event page URL (with description) instead of checkout URL
+                url: `https://www.tickettailor.com/events/ccug/${eventId}`,
                 image: series.images?.thumbnail || series.images?.header || null
               });
               console.log(`    ✓ Added: ${series.name} on ${occ.start.date}`);
@@ -126,7 +127,8 @@ export default async function handler(req, res) {
               name: event.name,
               date: event.start.iso,
               unix: event.start.unix,
-              url: event.url || `https://www.tickettailor.com/events/ccug/${eventId}`,
+              // Use event page URL (with description) instead of checkout URL
+              url: `https://www.tickettailor.com/events/ccug/${eventId}`,
               image: event.images?.thumbnail || event.images?.header || null
             });
           }
