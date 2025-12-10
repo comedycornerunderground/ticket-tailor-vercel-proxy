@@ -79,12 +79,14 @@ export default async function handler(req, res) {
             const eventDate = new Date(occ.start.unix * 1000);
             
             if (eventDate >= today && occ.tickets_available) {
+              // Extract numeric ID from occ.id (e.g., "ev_1234567" -> "1234567")
+              const eventId = occ.id.replace(/^ev_/, '');
               allEvents.push({
                 id: occ.id,
                 name: series.name,
                 date: occ.start.iso,
                 unix: occ.start.unix,
-                url: occ.url || `https://www.tickettailor.com/events/ccug/${series.id}`,
+                url: occ.url || `https://www.tickettailor.com/events/ccug/${eventId}`,
                 image: series.images?.thumbnail || series.images?.header || null
               });
               console.log(`    ✓ Added: ${series.name} on ${occ.start.date}`);
@@ -117,12 +119,14 @@ export default async function handler(req, res) {
           const eventDate = new Date(event.start.unix * 1000);
           
           if (eventDate >= today && event.tickets_available) {
+            // Extract numeric ID from event.id (e.g., "ev_1234567" -> "1234567")
+            const eventId = event.id.replace(/^ev_/, '');
             allEvents.push({
               id: event.id,
               name: event.name,
               date: event.start.iso,
               unix: event.start.unix,
-              url: event.url,
+              url: event.url || `https://www.tickettailor.com/events/ccug/${eventId}`,
               image: event.images?.thumbnail || event.images?.header || null
             });
           }
