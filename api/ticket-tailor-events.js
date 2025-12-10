@@ -79,15 +79,16 @@ export default async function handler(req, res) {
             const eventDate = new Date(occ.start.unix * 1000);
             
             if (eventDate >= today && occ.tickets_available) {
-              // Extract numeric ID from occ.id (e.g., "ev_1234567" -> "1234567")
-              const eventId = occ.id.replace(/^ev_/, '');
+              // Extract numeric ID from series.id (e.g., "es_1948944" -> "1948944")
+              // The event page URL uses the series ID, not the occurrence ID
+              const seriesId = series.id.replace(/^es_/, '');
               allEvents.push({
                 id: occ.id,
                 name: series.name,
                 date: occ.start.iso,
                 unix: occ.start.unix,
-                // Use event page URL (with description) instead of checkout URL
-                url: `https://www.tickettailor.com/events/ccug/${eventId}`,
+                // Use event page URL (with description) - uses series ID
+                url: `https://www.tickettailor.com/events/ccug/${seriesId}`,
                 image: series.images?.thumbnail || series.images?.header || null
               });
               console.log(`    ✓ Added: ${series.name} on ${occ.start.date}`);
