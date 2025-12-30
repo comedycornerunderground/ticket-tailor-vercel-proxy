@@ -125,11 +125,11 @@ export default async function handler(req, res) {
 async function handleBlockAction(payload, res) {
   const action = payload.actions[0];
 
-  if (action.action_id === 'claim_shift') {
+  // Weekly: unlimited sign-ups (admin picks later)
+  if (action.action_id === 'claim_shift_weekly') {
     const scheduleId = action.value;
-    console.log('Claim shift button clicked for schedule:', scheduleId);
+    console.log('Weekly sign-up button clicked for schedule:', scheduleId);
 
-    // Get schedule from store
     const schedule = await getSchedule(scheduleId);
 
     if (!schedule) {
@@ -140,17 +140,47 @@ async function handleBlockAction(payload, res) {
       });
     }
 
-    // Build available slots
-    const assignments = getDisplayAssignments(schedule.assignments);
+    // For weekly, all slots are available (unlimited sign-ups)
     const availableSlots = schedule.slots.map(slot => ({
       ...slot,
-      claimed: !!assignments[slot.dateKey],
-      claimedBy: assignments[slot.dateKey] || null
+      claimed: false, // Always show as available for weekly
+      claimedBy: null
     }));
 
-    // Open modal with slot selection
-    const modal = buildSlotSelectionModal(scheduleId, availableSlots);
+    const modal = buildSlotSelectionModal(scheduleId, availableSlots, 'weekly');
+    await openModal(payload.trigger_id, modal);
 
+    return res.status(200).json({ ok: true });
+  }
+
+  // Monthly: FCFS, one person per slot
+  if (action.action_id === 'claim_shift') {
+    const scheduleId = action.value;
+    console.log('Monthly claim shift button clicked for schedule:', scheduleId);
+
+    const schedule = await getSchedule(scheduleId);
+
+    if (!schedule) {
+      console.error('Schedule not found:', scheduleId);
+      return res.status(200).json({
+        response_action: 'errors',
+        errors: { general: 'Schedule not found' }
+      });
+    }
+
+    // For monthly, check which slots are already claimed
+    const assignments = schedule.assignments || {};
+    const availableSlots = schedule.slots.map(slot => {
+      const slotAssignments = assignments[slot.dateKey];
+      const isClaimed = Array.isArray(slotAssignments) ? slotAssignments.length > 0 : !!slotAssignments;
+      return {
+        ...slot,
+        claimed: isClaimed,
+        claimedBy: isClaimed ? getDisplayAssignments({ [slot.dateKey]: slotAssignments })[slot.dateKey] : null
+      };
+    });
+
+    const modal = buildSlotSelectionModal(scheduleId, availableSlots, 'monthly');
     await openModal(payload.trigger_id, modal);
 
     return res.status(200).json({ ok: true });
@@ -166,10 +196,20 @@ async function handleBlockAction(payload, res) {
  */
 async function handleViewSubmission(payload, res) {
   if (payload.view.callback_id === 'shift_selection_modal') {
-    const scheduleId = payload.view.private_metadata;
+    let scheduleId, mode;
+    try {
+      const metadata = JSON.parse(payload.view.private_metadata);
+      scheduleId = metadata.scheduleId;
+      mode = metadata.mode || 'monthly';
+    } catch {
+      // Fallback for old format
+      scheduleId = payload.view.private_metadata;
+      mode = 'monthly';
+    }
+
     const userId = payload.user.id;
 
-    console.log('Shift selection submitted for schedule:', scheduleId);
+    console.log(`Shift selection submitted for schedule: ${scheduleId}, mode: ${mode}`);
 
     // Get selected shifts
     const selectedShifts = payload.view.state.values.shift_selection.selected_shifts.selected_options || [];

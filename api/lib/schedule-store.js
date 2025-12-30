@@ -185,9 +185,9 @@ export async function storeMultiChannelPost(scheduleId, messages) {
 }
 
 /**
- * Get formatted assignments for display
+ * Get formatted assignments for display (with Slack user mentions)
  * @param {object} assignments - Raw assignments object
- * @returns {object} - Map of dateKey to display names (comma-separated)
+ * @returns {object} - Map of dateKey to Slack mentions (comma-separated)
  */
 export function getDisplayAssignments(assignments) {
   if (!assignments) return {};
@@ -195,10 +195,12 @@ export function getDisplayAssignments(assignments) {
   const display = {};
   for (const [dateKey, value] of Object.entries(assignments)) {
     if (Array.isArray(value)) {
-      // Multiple people per slot
-      display[dateKey] = value.map(a => a.name).join(', ');
+      // Multiple people per slot - use Slack mention format <@USER_ID>
+      display[dateKey] = value.map(a => a.userId ? `<@${a.userId}>` : a.name).join(', ');
     } else if (typeof value === 'string') {
       display[dateKey] = value;
+    } else if (value && value.userId) {
+      display[dateKey] = `<@${value.userId}>`;
     } else if (value && value.name) {
       display[dateKey] = value.name;
     }

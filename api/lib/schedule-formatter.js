@@ -51,10 +51,10 @@ function formatDateLine(dateKey, events, assignments = {}) {
 
   let line = `${dateKey} ${uniqueNames.join(' / ')}`;
 
-  // Add assignee if present
+  // Add assignees if present (already formatted as Slack mentions)
   const slotKey = dateKey;
   if (assignments[slotKey]) {
-    line += ` @${assignments[slotKey]}`;
+    line += ` - ${assignments[slotKey]}`;
   }
 
   return line;
@@ -154,9 +154,9 @@ export function formatWeeklySchedule(events, assignments = {}, scheduleId) {
 
     if (dateHasShowcase) {
       if (assignee) {
-        line += ` - @${assignee}`;
+        line += ` - ${assignee}`;
       } else {
-        line += ' - AVAILABLE';
+        line += ' - OPEN';
       }
     }
 
@@ -166,13 +166,13 @@ export function formatWeeklySchedule(events, assignments = {}, scheduleId) {
   // If no showcase slots this week
   if (!hasShowcase) {
     return {
-      text: 'No showcase slots this week - all shows are "and" format',
+      text: 'No slots this week',
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: '*No showcase slots this week* - all shows are "and" format'
+            text: '*No slots this week*'
           }
         }
       ],
@@ -202,17 +202,24 @@ export function formatWeeklySchedule(events, assignments = {}, scheduleId) {
       type: 'divider'
     },
     {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: '_Click the button to mark yourself open for potential showcase slots. Admin will confirm assignments._'
+      }
+    },
+    {
       type: 'actions',
       elements: [
         {
           type: 'button',
           text: {
             type: 'plain_text',
-            text: 'Claim Shift',
+            text: 'Mark open for slot',
             emoji: true
           },
           style: 'primary',
-          action_id: 'claim_shift',
+          action_id: 'claim_shift_weekly',
           value: scheduleId
         }
       ]
@@ -226,9 +233,10 @@ export function formatWeeklySchedule(events, assignments = {}, scheduleId) {
  * Build the slot selection modal
  * @param {string} scheduleId - Schedule ID
  * @param {Array} availableSlots - Array of { dateKey, eventName, claimed }
+ * @param {string} mode - 'weekly' or 'monthly'
  * @returns {object} - Slack modal view
  */
-export function buildSlotSelectionModal(scheduleId, availableSlots) {
+export function buildSlotSelectionModal(scheduleId, availableSlots, mode = 'monthly') {
   const options = availableSlots
     .filter(slot => !slot.claimed)
     .map(slot => ({
@@ -241,11 +249,15 @@ export function buildSlotSelectionModal(scheduleId, availableSlots) {
     }));
 
   if (options.length === 0) {
+    const message = mode === 'weekly'
+      ? 'No showcase slots available this week.'
+      : 'All shifts have been claimed! Check back later or contact a coordinator.';
+
     return {
       type: 'modal',
       title: {
         type: 'plain_text',
-        text: 'No Available Shifts'
+        text: 'No Available Slots'
       },
       close: {
         type: 'plain_text',
@@ -256,24 +268,32 @@ export function buildSlotSelectionModal(scheduleId, availableSlots) {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: 'All shifts have been claimed! Check back later or contact a coordinator.'
+            text: message
           }
         }
       ]
     };
   }
 
+  // Different text for weekly vs monthly
+  const isWeekly = mode === 'weekly';
+  const title = isWeekly ? 'Sign Up for Showcase' : 'Claim Shifts';
+  const submitText = isWeekly ? 'Submit' : 'Claim Selected';
+  const instructions = isWeekly
+    ? '*Mark yourself as available for showcase slots.*\n\nSelect the dates you\'re interested in performing. An admin will review and confirm assignments.'
+    : '*Claim your shift (first-come, first-served).*\n\nOnce you claim a shift, it\'s yours! Select the dates you want to work.';
+
   return {
     type: 'modal',
     callback_id: 'shift_selection_modal',
-    private_metadata: scheduleId,
+    private_metadata: JSON.stringify({ scheduleId, mode }),
     title: {
       type: 'plain_text',
-      text: 'Claim Shifts'
+      text: title
     },
     submit: {
       type: 'plain_text',
-      text: 'Claim Selected'
+      text: submitText
     },
     close: {
       type: 'plain_text',
@@ -284,7 +304,7 @@ export function buildSlotSelectionModal(scheduleId, availableSlots) {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: 'Select the shift(s) you want to work:'
+          text: instructions
         }
       },
       {
@@ -297,7 +317,7 @@ export function buildSlotSelectionModal(scheduleId, availableSlots) {
         },
         label: {
           type: 'plain_text',
-          text: 'Available Shifts',
+          text: isWeekly ? 'Available Dates' : 'Available Shifts',
           emoji: true
         }
       }
