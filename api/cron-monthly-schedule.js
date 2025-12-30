@@ -13,9 +13,11 @@ import {
 
 export default async function handler(req, res) {
   // Verify this is a cron job request (Vercel adds this header)
+  // Allow ?test=true for manual testing
   const authHeader = req.headers.authorization;
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    // Allow manual triggering for testing if CRON_SECRET not set
+  const isTest = req.query.test === 'true';
+
+  if (!isTest && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     if (process.env.CRON_SECRET) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
