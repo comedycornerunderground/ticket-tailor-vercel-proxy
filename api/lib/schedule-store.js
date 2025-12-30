@@ -66,7 +66,7 @@ export async function updateAssignments(scheduleId, assignments) {
 }
 
 /**
- * Assign a user to a specific slot
+ * Assign a user to a specific slot (supports multiple people per slot)
  * @param {string} scheduleId
  * @param {string} dateKey - e.g., "1/7"
  * @param {string} userName - User's display name
@@ -82,11 +82,21 @@ export async function assignSlot(scheduleId, dateKey, userName, userId) {
     schedule.assignments = {};
   }
 
-  schedule.assignments[dateKey] = {
-    name: userName,
-    userId: userId,
-    assignedAt: Date.now()
-  };
+  // Support multiple people per slot (stored as array)
+  if (!schedule.assignments[dateKey]) {
+    schedule.assignments[dateKey] = [];
+  }
+
+  // Check if user already signed up for this slot
+  const existingIndex = schedule.assignments[dateKey].findIndex(a => a.userId === userId);
+  if (existingIndex === -1) {
+    schedule.assignments[dateKey].push({
+      name: userName,
+      userId: userId,
+      assignedAt: Date.now()
+    });
+  }
+
   schedule.updatedAt = Date.now();
 
   await kv.set(scheduleId, schedule);
@@ -177,14 +187,21 @@ export async function storeMultiChannelPost(scheduleId, messages) {
 /**
  * Get formatted assignments for display
  * @param {object} assignments - Raw assignments object
- * @returns {object} - Map of dateKey to display name
+ * @returns {object} - Map of dateKey to display names (comma-separated)
  */
 export function getDisplayAssignments(assignments) {
   if (!assignments) return {};
 
   const display = {};
   for (const [dateKey, value] of Object.entries(assignments)) {
-    display[dateKey] = typeof value === 'string' ? value : value.name;
+    if (Array.isArray(value)) {
+      // Multiple people per slot
+      display[dateKey] = value.map(a => a.name).join(', ');
+    } else if (typeof value === 'string') {
+      display[dateKey] = value;
+    } else if (value && value.name) {
+      display[dateKey] = value.name;
+    }
   }
   return display;
 }
