@@ -166,11 +166,13 @@ export async function getEventsForDays(startDate = new Date(), days = 7) {
 }
 
 /**
- * Get events for the upcoming 5 weeks (35 days)
+ * Get events for the upcoming 5 weeks (35 days), excluding Thursdays
  * @returns {Promise<Array>}
  */
 export async function getEventsForWeek() {
-  return getEventsForDays(new Date(), 35);
+  const events = await getEventsForDays(new Date(), 35);
+  // Filter out Thursdays (day 4) - they're booked separately
+  return events.filter(event => event.dateObj.getDay() !== 4);
 }
 
 /**
