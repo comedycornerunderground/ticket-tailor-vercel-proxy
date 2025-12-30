@@ -30,6 +30,20 @@ export function parseShowName(name) {
     return { type: 'special', performers: [], isOpenMic, isMidweekMic, isTBD };
   }
 
+  // Check for "and" pattern FIRST (no showcase) - "and" trumps "with"
+  // Match pattern: "Performer 1 and Performer 2" or "Performer 1 and Friends"
+  // Also catches "Performer 1 with Someone and Someone Else"
+  if (/ and /i.test(name)) {
+    const andMatch = name.match(/^(.+?)\s+and\s+(.+)$/i);
+    return {
+      type: 'no-showcase',
+      performers: andMatch ? [andMatch[1].trim(), andMatch[2].trim()] : [name],
+      isOpenMic,
+      isMidweekMic,
+      isTBD
+    };
+  }
+
   // Check for "with" pattern (showcase available)
   // Match pattern: "Performer 1 with Performer 2"
   const withMatch = name.match(/^(.+?)\s+with\s+(.+)$/i);
@@ -37,19 +51,6 @@ export function parseShowName(name) {
     return {
       type: 'showcase',
       performers: [withMatch[1].trim(), withMatch[2].trim()],
-      isOpenMic,
-      isMidweekMic,
-      isTBD
-    };
-  }
-
-  // Check for "and" pattern (no showcase)
-  // Match pattern: "Performer 1 and Performer 2" or "Performer 1 and Friends"
-  const andMatch = name.match(/^(.+?)\s+and\s+(.+)$/i);
-  if (andMatch) {
-    return {
-      type: 'no-showcase',
-      performers: [andMatch[1].trim(), andMatch[2].trim()],
       isOpenMic,
       isMidweekMic,
       isTBD
