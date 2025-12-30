@@ -8,5 +8,9 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": ""
+  "description": "",
+  "dependencies": {
+    "@slack/web-api": "^7.13.0",
+    "@vercel/kv": "^3.0.0"
+  }
 }
