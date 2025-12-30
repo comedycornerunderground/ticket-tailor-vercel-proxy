@@ -239,14 +239,21 @@ export function formatWeeklySchedule(events, assignments = {}, scheduleId) {
 export function buildSlotSelectionModal(scheduleId, availableSlots, mode = 'monthly') {
   const options = availableSlots
     .filter(slot => !slot.claimed)
-    .map(slot => ({
-      text: {
-        type: 'plain_text',
-        text: `${slot.dateKey} - ${slot.eventName}`,
-        emoji: true
-      },
-      value: slot.dateKey
-    }));
+    .map(slot => {
+      // Truncate event name to fit Slack's 75 char limit for option text
+      let label = `${slot.dateKey} - ${slot.eventName}`;
+      if (label.length > 75) {
+        label = label.substring(0, 72) + '...';
+      }
+      return {
+        text: {
+          type: 'plain_text',
+          text: label,
+          emoji: true
+        },
+        value: slot.dateKey
+      };
+    });
 
   if (options.length === 0) {
     const message = mode === 'weekly'
