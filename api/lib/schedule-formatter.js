@@ -4,17 +4,21 @@
 import { parseShowName } from './event-parser.js';
 
 /**
- * Format date for display (e.g., "1/7")
- * @param {Date} date
+ * Format date for display (e.g., "1/7") from ISO string
+ * Uses the date from the ISO string to avoid timezone issues
+ * @param {string} isoDate - ISO date string like "2025-12-31T19:00:00-06:00"
  * @returns {string}
  */
-function formatDateShort(date) {
-  return `${date.getMonth() + 1}/${date.getDate()}`;
+function formatDateShort(isoDate) {
+  // Extract just the date part (YYYY-MM-DD) to avoid timezone issues
+  const datePart = isoDate.split('T')[0];
+  const [year, month, day] = datePart.split('-').map(Number);
+  return `${month}/${day}`;
 }
 
 
 /**
- * Group events by date
+ * Group events by date (using ISO string to avoid timezone issues)
  * @param {Array} events
  * @returns {Map<string, Array>}
  */
@@ -22,7 +26,7 @@ function groupEventsByDate(events) {
   const grouped = new Map();
 
   events.forEach(event => {
-    const dateKey = formatDateShort(event.dateObj);
+    const dateKey = formatDateShort(event.date);
     if (!grouped.has(dateKey)) {
       grouped.set(dateKey, []);
     }
