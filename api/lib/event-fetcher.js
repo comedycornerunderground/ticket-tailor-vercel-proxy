@@ -166,6 +166,20 @@ export async function getEventsForDays(startDate = new Date(), days = 7) {
 }
 
 /**
+ * Get the day of week from an ISO date string (respects local timezone)
+ * @param {string} isoDate - ISO date string like "2026-01-02T20:00:00-06:00"
+ * @returns {number} - Day of week (0=Sun, 1=Mon, ... 4=Thu, 5=Fri, 6=Sat)
+ */
+function getDayFromISODate(isoDate) {
+  // Extract just the date part (YYYY-MM-DD) to avoid timezone issues
+  const datePart = isoDate.split('T')[0];
+  const [year, month, day] = datePart.split('-').map(Number);
+  // Create date at noon to avoid any DST issues
+  const localDate = new Date(year, month - 1, day, 12, 0, 0);
+  return localDate.getDay();
+}
+
+/**
  * Get events for the upcoming week (7 days), excluding Thursdays and Open Mics
  * @returns {Promise<Array>}
  */
@@ -177,7 +191,8 @@ export async function getEventsForWeek() {
       return false;
     }
     // Skip Thursdays (day 4) - they're booked separately
-    const day = event.dateObj.getDay();
+    // Use the ISO date string to get correct local day
+    const day = getDayFromISODate(event.date);
     if (day === 4) {
       return false;
     }
