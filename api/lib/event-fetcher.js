@@ -166,11 +166,11 @@ export async function getEventsForDays(startDate = new Date(), days = 7) {
 }
 
 /**
- * Get events for the upcoming week (next 7 days)
+ * Get events for the upcoming 5 weeks (35 days)
  * @returns {Promise<Array>}
  */
 export async function getEventsForWeek() {
-  return getEventsForDays(new Date(), 7);
+  return getEventsForDays(new Date(), 35);
 }
 
 /**
