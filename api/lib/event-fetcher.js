@@ -201,7 +201,7 @@ export async function getEventsForWeek() {
 }
 
 /**
- * Get events for the upcoming month (from today)
+ * Get events for the upcoming month (from today), excluding Thursdays and Open Mics
  * @returns {Promise<Array>}
  */
 export async function getEventsForUpcomingMonth() {
@@ -209,7 +209,20 @@ export async function getEventsForUpcomingMonth() {
   const nextMonth = new Date(today);
   nextMonth.setMonth(nextMonth.getMonth() + 1);
 
-  return getEventsForMonth(nextMonth.getMonth() + 1, nextMonth.getFullYear());
+  const events = await getEventsForMonth(nextMonth.getMonth() + 1, nextMonth.getFullYear());
+
+  return events.filter(event => {
+    // Skip Open Mic events
+    if (event.name.toLowerCase().includes('open mic')) {
+      return false;
+    }
+    // Skip Thursdays (day 4) - they're booked separately
+    const day = getDayFromISODate(event.date);
+    if (day === 4) {
+      return false;
+    }
+    return true;
+  });
 }
 
 /**
