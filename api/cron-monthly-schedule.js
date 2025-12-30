@@ -49,68 +49,78 @@ export default async function handler(req, res) {
       });
     }
 
-    // Generate schedule ID
+    // Generate separate schedule IDs for each channel (independent sign-ups)
     const period = `${monthInfo.year}-${String(monthInfo.monthNum).padStart(2, '0')}`;
-    const scheduleId = generateScheduleId('monthly', period);
+    const scheduleId1 = generateScheduleId('monthly', `${period}-ch1`);
+    const scheduleId2 = generateScheduleId('monthly', `${period}-ch2`);
 
-    // Format the schedule
-    const { text, blocks } = formatMonthlySchedule(
+    const availableSlots = getAvailableSlots(events, {});
+    const eventData = events.map(e => ({
+      id: e.id,
+      name: e.name,
+      date: e.date,
+      unix: e.unix
+    }));
+
+    // Post to channel 1 with its own schedule ID
+    console.log(`Posting to channel 1: ${channel1}`);
+    const { text: text1, blocks: blocks1 } = formatMonthlySchedule(
       monthInfo.month,
       events,
-      {}, // No assignments yet
-      scheduleId
+      {},
+      scheduleId1
     );
-
-    // Post to both channels
-    const postedMessages = [];
-
-    console.log(`Posting to channel 1: ${channel1}`);
-    const result1 = await postMessage(channel1, text, blocks);
+    const result1 = await postMessage(channel1, text1, blocks1);
     if (result1.ok) {
-      postedMessages.push({ channel: channel1, ts: result1.ts });
+      await storeSchedulePost(scheduleId1, {
+        type: 'monthly',
+        period,
+        month: monthInfo.month,
+        year: monthInfo.year,
+        channel: channel1,
+        ts: result1.ts,
+        events: eventData,
+        slots: availableSlots,
+        assignments: {}
+      });
       console.log(`Posted to channel 1, ts: ${result1.ts}`);
     }
 
+    // Post to channel 2 with its own schedule ID
     console.log(`Posting to channel 2: ${channel2}`);
-    const result2 = await postMessage(channel2, text, blocks);
+    const { text: text2, blocks: blocks2 } = formatMonthlySchedule(
+      monthInfo.month,
+      events,
+      {},
+      scheduleId2
+    );
+    const result2 = await postMessage(channel2, text2, blocks2);
     if (result2.ok) {
-      postedMessages.push({ channel: channel2, ts: result2.ts });
+      await storeSchedulePost(scheduleId2, {
+        type: 'monthly',
+        period,
+        month: monthInfo.month,
+        year: monthInfo.year,
+        channel: channel2,
+        ts: result2.ts,
+        events: eventData,
+        slots: availableSlots,
+        assignments: {}
+      });
       console.log(`Posted to channel 2, ts: ${result2.ts}`);
     }
-
-    // Store schedule info
-    const availableSlots = getAvailableSlots(events, {});
-
-    await storeSchedulePost(scheduleId, {
-      type: 'monthly',
-      period,
-      month: monthInfo.month,
-      year: monthInfo.year,
-      channel: channel1, // Primary channel
-      ts: result1.ts,
-      events: events.map(e => ({
-        id: e.id,
-        name: e.name,
-        date: e.date,
-        unix: e.unix
-      })),
-      slots: availableSlots,
-      assignments: {}
-    });
-
-    // Store multi-channel info
-    await storeMultiChannelPost(scheduleId, postedMessages);
 
     console.log('Monthly schedule posted successfully');
 
     return res.status(200).json({
       success: true,
-      scheduleId,
+      scheduleId1,
+      scheduleId2,
       month: monthInfo.month,
       year: monthInfo.year,
       eventCount: events.length,
       slotCount: availableSlots.length,
-      channels: postedMessages.length
+      channels: 2
     });
 
   } catch (error) {
