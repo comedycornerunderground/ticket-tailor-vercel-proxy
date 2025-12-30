@@ -12,18 +12,6 @@ function formatDateShort(date) {
   return `${date.getMonth() + 1}/${date.getDate()}`;
 }
 
-/**
- * Format time for display (e.g., "8pm")
- * @param {Date} date
- * @returns {string}
- */
-function formatTime(date) {
-  let hours = date.getHours();
-  const ampm = hours >= 12 ? 'pm' : 'am';
-  hours = hours % 12;
-  hours = hours || 12;
-  return `${hours}${ampm}`;
-}
 
 /**
  * Group events by date
@@ -55,14 +43,13 @@ function formatDateLine(dateKey, events, assignments = {}) {
   // Sort events by time
   events.sort((a, b) => a.unix - b.unix);
 
-  const parts = events.map(event => {
-    const time = formatTime(event.dateObj);
+  // Get unique event names for this date
+  const uniqueNames = [...new Set(events.map(event => {
     const parsed = parseShowName(event.name);
-    const displayName = parsed.isTBD ? 'TBD' : event.name;
-    return `${time} ${displayName}`;
-  });
+    return parsed.isTBD ? 'TBD' : event.name;
+  }))];
 
-  let line = `${dateKey} ${parts.join(' and ')}`;
+  let line = `${dateKey} ${uniqueNames.join(' / ')}`;
 
   // Add assignee if present
   const slotKey = dateKey;
