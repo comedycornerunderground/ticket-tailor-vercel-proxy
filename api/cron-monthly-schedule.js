@@ -36,11 +36,14 @@ export default async function handler(req, res) {
 
     // Get next month's events
     const monthInfo = getNextMonthInfo();
-    const events = await getEventsForUpcomingMonth();
 
-    console.log(`Found ${events.length} events for ${monthInfo.month} ${monthInfo.year}`);
+    // Channel 1 includes Wednesday shows, Channel 2 is Fri/Sat only
+    const eventsWithWed = await getEventsForUpcomingMonth({ includeWednesdays: true });
+    const eventsFriSat = await getEventsForUpcomingMonth({ includeWednesdays: false });
 
-    if (events.length === 0) {
+    console.log(`Found ${eventsWithWed.length} events (with Wed) and ${eventsFriSat.length} events (Fri/Sat) for ${monthInfo.month} ${monthInfo.year}`);
+
+    if (eventsWithWed.length === 0 && eventsFriSat.length === 0) {
       console.log('No events found for next month');
       return res.status(200).json({
         success: true,
@@ -54,19 +57,29 @@ export default async function handler(req, res) {
     const scheduleId1 = generateScheduleId('monthly', `${period}-ch1`);
     const scheduleId2 = generateScheduleId('monthly', `${period}-ch2`);
 
-    const availableSlots = getAvailableSlots(events, {});
-    const eventData = events.map(e => ({
+    // Channel 1: includes Wednesday shows
+    const availableSlots1 = getAvailableSlots(eventsWithWed, {});
+    const eventData1 = eventsWithWed.map(e => ({
       id: e.id,
       name: e.name,
       date: e.date,
       unix: e.unix
     }));
 
-    // Post to channel 1 with its own schedule ID
-    console.log(`Posting to channel 1: ${channel1}`);
+    // Channel 2: Fri/Sat only
+    const availableSlots2 = getAvailableSlots(eventsFriSat, {});
+    const eventData2 = eventsFriSat.map(e => ({
+      id: e.id,
+      name: e.name,
+      date: e.date,
+      unix: e.unix
+    }));
+
+    // Post to channel 1 with Wednesday shows included
+    console.log(`Posting to channel 1: ${channel1} (with Wednesdays)`);
     const { text: text1, blocks: blocks1 } = formatMonthlySchedule(
       monthInfo.month,
-      events,
+      eventsWithWed,
       {},
       scheduleId1
     );
@@ -79,18 +92,18 @@ export default async function handler(req, res) {
         year: monthInfo.year,
         channel: channel1,
         ts: result1.ts,
-        events: eventData,
-        slots: availableSlots,
+        events: eventData1,
+        slots: availableSlots1,
         assignments: {}
       });
       console.log(`Posted to channel 1, ts: ${result1.ts}`);
     }
 
-    // Post to channel 2 with its own schedule ID
-    console.log(`Posting to channel 2: ${channel2}`);
+    // Post to channel 2 with Fri/Sat only
+    console.log(`Posting to channel 2: ${channel2} (Fri/Sat only)`);
     const { text: text2, blocks: blocks2 } = formatMonthlySchedule(
       monthInfo.month,
-      events,
+      eventsFriSat,
       {},
       scheduleId2
     );
@@ -103,8 +116,8 @@ export default async function handler(req, res) {
         year: monthInfo.year,
         channel: channel2,
         ts: result2.ts,
-        events: eventData,
-        slots: availableSlots,
+        events: eventData2,
+        slots: availableSlots2,
         assignments: {}
       });
       console.log(`Posted to channel 2, ts: ${result2.ts}`);
@@ -118,9 +131,10 @@ export default async function handler(req, res) {
       scheduleId2,
       month: monthInfo.month,
       year: monthInfo.year,
-      eventCount: events.length,
-      slotCount: availableSlots.length,
-      channels: 2
+      channel1EventCount: eventsWithWed.length,
+      channel2EventCount: eventsFriSat.length,
+      channel1SlotCount: availableSlots1.length,
+      channel2SlotCount: availableSlots2.length
     });
 
   } catch (error) {

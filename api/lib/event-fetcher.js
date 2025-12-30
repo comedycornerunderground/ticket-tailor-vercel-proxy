@@ -202,9 +202,13 @@ export async function getEventsForWeek() {
 
 /**
  * Get events for the upcoming month (from today), excluding Thursdays and Open Mics
+ * @param {object} options - Filter options
+ * @param {boolean} options.includeWednesdays - Include Wednesday shows (default false)
  * @returns {Promise<Array>}
  */
-export async function getEventsForUpcomingMonth() {
+export async function getEventsForUpcomingMonth(options = {}) {
+  const { includeWednesdays = false } = options;
+
   const today = new Date();
   const nextMonth = new Date(today);
   nextMonth.setMonth(nextMonth.getMonth() + 1);
@@ -216,9 +220,13 @@ export async function getEventsForUpcomingMonth() {
     if (event.name.toLowerCase().includes('open mic')) {
       return false;
     }
-    // Skip Thursdays (day 4) - they're booked separately
     const day = getDayFromISODate(event.date);
+    // Skip Thursdays (day 4) - they're booked separately
     if (day === 4) {
+      return false;
+    }
+    // Skip Wednesdays (day 3) unless explicitly included
+    if (day === 3 && !includeWednesdays) {
       return false;
     }
     return true;
