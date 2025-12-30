@@ -101,6 +101,7 @@ export default async function handler(req, res) {
     const payload = JSON.parse(params.get('payload'));
 
     console.log('Received interaction type:', payload.type);
+    console.log('Payload:', JSON.stringify(payload, null, 2));
 
     // Handle different interaction types
     if (payload.type === 'block_actions') {
@@ -114,8 +115,9 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true });
 
   } catch (error) {
-    console.error('Interactivity error:', error);
-    return res.status(500).json({ error: error.message });
+    console.error('Interactivity error:', error.message, error.stack);
+    // Return 200 so Slack doesn't show error to user, but log it
+    return res.status(200).json({ ok: false, error: error.message });
   }
 }
 
@@ -158,32 +160,48 @@ async function handleBlockAction(payload, res) {
     const scheduleId = action.value;
     console.log('Monthly claim shift button clicked for schedule:', scheduleId);
 
-    const schedule = await getSchedule(scheduleId);
+    try {
+      const schedule = await getSchedule(scheduleId);
 
-    if (!schedule) {
-      console.error('Schedule not found:', scheduleId);
+      if (!schedule) {
+        console.error('Schedule not found:', scheduleId);
+        return res.status(200).json({
+          response_action: 'errors',
+          errors: { general: 'Schedule not found' }
+        });
+      }
+
+      if (!schedule.slots || !Array.isArray(schedule.slots)) {
+        console.error('Schedule has no slots:', scheduleId);
+        return res.status(200).json({
+          response_action: 'errors',
+          errors: { general: 'Schedule has no slots configured' }
+        });
+      }
+
+      // For monthly, check which slots are already claimed
+      const assignments = schedule.assignments || {};
+      const availableSlots = schedule.slots.map(slot => {
+        const slotAssignments = assignments[slot.dateKey];
+        const isClaimed = Array.isArray(slotAssignments) ? slotAssignments.length > 0 : !!slotAssignments;
+        return {
+          ...slot,
+          claimed: isClaimed,
+          claimedBy: isClaimed ? getDisplayAssignments({ [slot.dateKey]: slotAssignments })[slot.dateKey] : null
+        };
+      });
+
+      const modal = buildSlotSelectionModal(scheduleId, availableSlots, 'monthly');
+      await openModal(payload.trigger_id, modal);
+
+      return res.status(200).json({ ok: true });
+    } catch (error) {
+      console.error('Monthly claim error:', error);
       return res.status(200).json({
         response_action: 'errors',
-        errors: { general: 'Schedule not found' }
+        errors: { general: `Error: ${error.message}` }
       });
     }
-
-    // For monthly, check which slots are already claimed
-    const assignments = schedule.assignments || {};
-    const availableSlots = schedule.slots.map(slot => {
-      const slotAssignments = assignments[slot.dateKey];
-      const isClaimed = Array.isArray(slotAssignments) ? slotAssignments.length > 0 : !!slotAssignments;
-      return {
-        ...slot,
-        claimed: isClaimed,
-        claimedBy: isClaimed ? getDisplayAssignments({ [slot.dateKey]: slotAssignments })[slot.dateKey] : null
-      };
-    });
-
-    const modal = buildSlotSelectionModal(scheduleId, availableSlots, 'monthly');
-    await openModal(payload.trigger_id, modal);
-
-    return res.status(200).json({ ok: true });
   }
 
   // Unknown action
