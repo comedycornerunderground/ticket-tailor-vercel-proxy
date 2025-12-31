@@ -16,6 +16,21 @@ function formatDateShort(isoDate) {
   return `${month}/${day}`;
 }
 
+/**
+ * Format time for display (e.g., "8pm", "10pm") from ISO string
+ * @param {string} isoDate - ISO date string like "2025-12-31T20:00:00-06:00"
+ * @returns {string}
+ */
+function formatTimeShort(isoDate) {
+  const timePart = isoDate.split('T')[1];
+  const [hourStr] = timePart.split(':');
+  const hour = parseInt(hourStr, 10);
+  if (hour === 0) return '12am';
+  if (hour < 12) return `${hour}am`;
+  if (hour === 12) return '12pm';
+  return `${hour - 12}pm`;
+}
+
 
 /**
  * Group events by date (using ISO string to avoid timezone issues)
@@ -148,31 +163,35 @@ export function formatMonthlySchedule(monthName, events, assignments = {}, sched
 
 /**
  * Create Slack blocks for weekly schedule
+ * Shows each show separately (early and late) for individual sign-ups
  * @param {Array} events - Events for the week
  * @param {object} assignments - Map of slot IDs to assignee names
  * @param {string} scheduleId - Unique schedule ID for button actions
  * @returns {{ text: string, blocks: Array, hasShowcase: boolean }}
  */
 export function formatWeeklySchedule(events, assignments = {}, scheduleId) {
-  const grouped = groupEventsByDate(events);
+  // Sort events by time
+  const sortedEvents = [...events].sort((a, b) => a.unix - b.unix);
   const lines = [];
   let hasShowcase = false;
 
-  for (const [dateKey, dateEvents] of grouped) {
-    // Check if any event on this date has showcase slots
-    const dateHasShowcase = dateEvents.some(event => {
-      const parsed = parseShowName(event.name);
-      return parsed.type === 'showcase' || parsed.type === 'special';
-    });
+  for (const event of sortedEvents) {
+    const parsed = parseShowName(event.name);
+    const isShowcase = parsed.type === 'showcase' || parsed.type === 'special';
 
-    if (dateHasShowcase) {
+    if (isShowcase) {
       hasShowcase = true;
     }
 
-    const assignee = assignments[dateKey];
-    let line = formatDateLine(dateKey, dateEvents, {});
+    const dateKey = formatDateShort(event.date);
+    const timeKey = formatTimeShort(event.date);
+    const slotKey = `${dateKey}-${timeKey}`;
+    const displayName = parsed.isTBD ? 'TBD' : event.name;
 
-    if (dateHasShowcase) {
+    let line = `${dateKey} ${timeKey} ${displayName}`;
+
+    if (isShowcase) {
+      const assignee = assignments[slotKey];
       if (assignee) {
         line += ` - ${assignee}`;
       } else {
@@ -353,7 +372,7 @@ export function buildSlotSelectionModal(scheduleId, availableSlots, mode = 'mont
 }
 
 /**
- * Get available slots from events
+ * Get available slots from events (grouped by date - for monthly)
  * @param {Array} events - Events
  * @param {object} assignments - Current assignments
  * @returns {Array} - Array of { dateKey, eventName, claimed, claimedBy }
@@ -378,6 +397,38 @@ export function getAvailableSlots(events, assignments = {}) {
         eventName: eventNames,
         claimed,
         claimedBy: assignments[dateKey] || null
+      });
+    }
+  }
+
+  return slots;
+}
+
+/**
+ * Get available slots for weekly (each show is a separate slot)
+ * @param {Array} events - Events
+ * @param {object} assignments - Current assignments
+ * @returns {Array} - Array of { dateKey, eventName, claimed, claimedBy }
+ */
+export function getAvailableSlotsWeekly(events, assignments = {}) {
+  const slots = [];
+  const sortedEvents = [...events].sort((a, b) => a.unix - b.unix);
+
+  for (const event of sortedEvents) {
+    const parsed = parseShowName(event.name);
+    const isShowcase = parsed.type === 'showcase' || parsed.type === 'special';
+
+    if (isShowcase) {
+      const dateKey = formatDateShort(event.date);
+      const timeKey = formatTimeShort(event.date);
+      const slotKey = `${dateKey}-${timeKey}`;
+      const displayName = parsed.isTBD ? 'TBD' : event.name;
+
+      slots.push({
+        dateKey: slotKey,
+        eventName: `${timeKey} ${displayName}`,
+        claimed: !!assignments[slotKey],
+        claimedBy: assignments[slotKey] || null
       });
     }
   }

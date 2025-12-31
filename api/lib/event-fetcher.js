@@ -127,6 +127,17 @@ async function fetchAllEvents() {
 }
 
 /**
+ * Extract month and year from ISO date string
+ * @param {string} isoDate - ISO date string like "2026-01-31T20:00:00-06:00"
+ * @returns {{ month: number, year: number }}
+ */
+function getMonthYearFromISO(isoDate) {
+  const datePart = isoDate.split('T')[0];
+  const [year, month] = datePart.split('-').map(Number);
+  return { month, year };
+}
+
+/**
  * Get events for a specific month
  * @param {number} month - Month (1-12)
  * @param {number} year - Year (e.g., 2025)
@@ -135,13 +146,22 @@ async function fetchAllEvents() {
 export async function getEventsForMonth(month, year) {
   const allEvents = await fetchAllEvents();
 
-  // Filter to the specific month
-  const startOfMonth = new Date(year, month - 1, 1);
-  const endOfMonth = new Date(year, month, 0, 23, 59, 59);
-
+  // Filter using ISO date string to avoid timezone issues
   return allEvents.filter(event => {
-    return event.dateObj >= startOfMonth && event.dateObj <= endOfMonth;
+    const eventDate = getMonthYearFromISO(event.date);
+    return eventDate.month === month && eventDate.year === year;
   });
+}
+
+/**
+ * Extract full date from ISO string
+ * @param {string} isoDate - ISO date string like "2026-01-31T20:00:00-06:00"
+ * @returns {{ year: number, month: number, day: number }}
+ */
+function getDateFromISO(isoDate) {
+  const datePart = isoDate.split('T')[0];
+  const [year, month, day] = datePart.split('-').map(Number);
+  return { year, month, day };
 }
 
 /**
@@ -153,15 +173,19 @@ export async function getEventsForMonth(month, year) {
 export async function getEventsForDays(startDate = new Date(), days = 7) {
   const allEvents = await fetchAllEvents();
 
+  // Calculate start and end dates as YYYYMMDD integers for comparison
   const start = new Date(startDate);
   start.setHours(0, 0, 0, 0);
+  const startInt = start.getFullYear() * 10000 + (start.getMonth() + 1) * 100 + start.getDate();
 
   const end = new Date(start);
   end.setDate(end.getDate() + days);
-  end.setHours(23, 59, 59, 999);
+  const endInt = end.getFullYear() * 10000 + (end.getMonth() + 1) * 100 + end.getDate();
 
   return allEvents.filter(event => {
-    return event.dateObj >= start && event.dateObj <= end;
+    const eventDate = getDateFromISO(event.date);
+    const eventInt = eventDate.year * 10000 + eventDate.month * 100 + eventDate.day;
+    return eventInt >= startInt && eventInt < endInt;
   });
 }
 

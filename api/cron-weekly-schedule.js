@@ -3,7 +3,7 @@
 // Triggered every Monday at 9am UTC
 
 import { getEventsForWeek } from './lib/event-fetcher.js';
-import { formatWeeklySchedule, getAvailableSlots } from './lib/schedule-formatter.js';
+import { formatWeeklySchedule, getAvailableSlotsWeekly } from './lib/schedule-formatter.js';
 import { postMessage } from './lib/slack-client.js';
 import { generateScheduleId, storeSchedulePost } from './lib/schedule-store.js';
 
@@ -70,7 +70,7 @@ export default async function handler(req, res) {
 
     // Store schedule info (only if there are showcase slots)
     if (hasShowcase) {
-      const availableSlots = getAvailableSlots(events, {});
+      const availableSlots = getAvailableSlotsWeekly(events, {});
 
       await storeSchedulePost(scheduleId, {
         type: 'weekly',
