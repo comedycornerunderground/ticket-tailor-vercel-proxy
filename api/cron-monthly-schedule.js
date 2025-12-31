@@ -37,9 +37,9 @@ export default async function handler(req, res) {
     // Get next month's events
     const monthInfo = getNextMonthInfo();
 
-    // Channel 1 includes Wednesday shows, Channel 2 is Fri/Sat only
-    const eventsWithWed = await getEventsForUpcomingMonth({ includeWednesdays: true });
-    const eventsFriSat = await getEventsForUpcomingMonth({ includeWednesdays: false });
+    // Channel 1 includes Wednesday shows + Friday Open Mic, Channel 2 is Fri/Sat only
+    const eventsWithWed = await getEventsForUpcomingMonth({ includeWednesdays: true, includeFridayOpenMic: true });
+    const eventsFriSat = await getEventsForUpcomingMonth({ includeWednesdays: false, includeFridayOpenMic: false });
 
     console.log(`Found ${eventsWithWed.length} events (with Wed) and ${eventsFriSat.length} events (Fri/Sat) for ${monthInfo.month} ${monthInfo.year}`);
 

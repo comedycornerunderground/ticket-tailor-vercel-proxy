@@ -47,13 +47,29 @@ function formatDateLine(dateKey, events, assignments = {}) {
   // Sort events by time
   events.sort((a, b) => a.unix - b.unix);
 
-  // Get unique event names for this date
-  const uniqueNames = [...new Set(events.map(event => {
-    const parsed = parseShowName(event.name);
-    return parsed.isTBD ? 'TBD' : event.name;
-  }))];
+  // Separate headliner shows from Friday Open Mic
+  const headliners = [];
+  let hasFridayOpenMic = false;
 
-  let line = `${dateKey} ${uniqueNames.join(' / ')}`;
+  events.forEach(event => {
+    const name = event.name;
+    if (name.toLowerCase().includes('friday') && name.toLowerCase().includes('open mic')) {
+      hasFridayOpenMic = true;
+    } else {
+      const parsed = parseShowName(name);
+      headliners.push(parsed.isTBD ? 'TBD' : name);
+    }
+  });
+
+  // Get unique headliner names
+  const uniqueHeadliners = [...new Set(headliners)];
+
+  let line = `${dateKey} ${uniqueHeadliners.join(' / ')}`;
+
+  // Add Friday Open Mic suffix if present
+  if (hasFridayOpenMic) {
+    line += ' + 10pm Friday Night Open Mic';
+  }
 
   // Add assignees if present (already formatted as Slack mentions)
   const slotKey = dateKey;

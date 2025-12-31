@@ -201,13 +201,14 @@ export async function getEventsForWeek() {
 }
 
 /**
- * Get events for the upcoming month (from today), excluding Thursdays and Open Mics
+ * Get events for the upcoming month (from today), with filtering options
  * @param {object} options - Filter options
  * @param {boolean} options.includeWednesdays - Include Wednesday shows (default false)
+ * @param {boolean} options.includeFridayOpenMic - Include Friday Open Mic (default false)
  * @returns {Promise<Array>}
  */
 export async function getEventsForUpcomingMonth(options = {}) {
-  const { includeWednesdays = false } = options;
+  const { includeWednesdays = false, includeFridayOpenMic = false } = options;
 
   const today = new Date();
   const nextMonth = new Date(today);
@@ -216,11 +217,18 @@ export async function getEventsForUpcomingMonth(options = {}) {
   const events = await getEventsForMonth(nextMonth.getMonth() + 1, nextMonth.getFullYear());
 
   return events.filter(event => {
-    // Skip Open Mic events
-    if (event.name.toLowerCase().includes('open mic')) {
+    const isOpenMic = event.name.toLowerCase().includes('open mic');
+    const isFridayOpenMic = isOpenMic && event.name.toLowerCase().includes('friday');
+    const day = getDayFromISODate(event.date);
+
+    // Skip Thursday Open Mics always
+    if (isOpenMic && !isFridayOpenMic) {
       return false;
     }
-    const day = getDayFromISODate(event.date);
+    // Skip Friday Open Mic unless explicitly included
+    if (isFridayOpenMic && !includeFridayOpenMic) {
+      return false;
+    }
     // Skip Thursdays (day 4) - they're booked separately
     if (day === 4) {
       return false;
