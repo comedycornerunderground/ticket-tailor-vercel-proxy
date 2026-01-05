@@ -2,10 +2,10 @@
 // Weekly cron job to post schedule to Slack channel
 // Triggered every Monday at 9am UTC
 
-import { getEventsForWeek } from './lib/event-fetcher.js';
-import { formatWeeklySchedule, getAvailableSlotsWeekly } from './lib/schedule-formatter.js';
+import { getEventsForWeek, getEventsForDays } from './lib/event-fetcher.js';
+import { formatWeeklySchedule, getAvailableSlotsWeekly, formatWeeklyShiftSummary } from './lib/schedule-formatter.js';
 import { postMessage } from './lib/slack-client.js';
-import { generateScheduleId, storeSchedulePost } from './lib/schedule-store.js';
+import { generateScheduleId, storeSchedulePost, getSchedule } from './lib/schedule-store.js';
 
 export default async function handler(req, res) {
   // Verify this is a cron job request (Vercel adds this header)
@@ -39,6 +39,9 @@ export default async function handler(req, res) {
 
       // Post a message saying no events
       await postMessage(channel, 'No shows scheduled this week.');
+
+      // Still post shift summaries to channels 1 and 2
+      await postShiftSummaries();
 
       return res.status(200).json({
         success: true,
@@ -89,6 +92,9 @@ export default async function handler(req, res) {
 
       console.log('Weekly schedule stored with', availableSlots.length, 'available slots');
 
+      // Post shift summaries to channels 1 and 2
+      await postShiftSummaries();
+
       return res.status(200).json({
         success: true,
         scheduleId,
@@ -101,6 +107,9 @@ export default async function handler(req, res) {
 
     // No showcase slots - just log it
     console.log('No showcase slots this week (all shows are "and" format)');
+
+    // Still post shift summaries to channels 1 and 2
+    await postShiftSummaries();
 
     return res.status(200).json({
       success: true,
@@ -117,5 +126,91 @@ export default async function handler(req, res) {
       error: 'Failed to post weekly schedule',
       message: error.message
     });
+  }
+}
+
+/**
+ * Get day of week from ISO date string
+ */
+function getDayFromISODate(isoDate) {
+  const datePart = isoDate.split('T')[0];
+  const [year, month, day] = datePart.split('-').map(Number);
+  const localDate = new Date(year, month - 1, day, 12, 0, 0);
+  return localDate.getDay();
+}
+
+/**
+ * Post shift summaries to channels 1 and 2
+ * Shows who's signed up for shifts this week based on monthly schedule assignments
+ */
+async function postShiftSummaries() {
+  const channel1 = process.env.MONTHLY_CHANNEL_1;
+  const channel2 = process.env.MONTHLY_CHANNEL_2;
+
+  if (!channel1 || !channel2) {
+    console.log('MONTHLY_CHANNEL_1 or MONTHLY_CHANNEL_2 not configured, skipping shift summaries');
+    return;
+  }
+
+  // Get the current month's schedule ID
+  const today = new Date();
+  const period = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  const scheduleId1 = generateScheduleId('monthly', `${period}-ch1`);
+  const scheduleId2 = generateScheduleId('monthly', `${period}-ch2`);
+
+  // Get all events for this week (unfiltered - we'll filter per channel)
+  const allWeekEvents = await getEventsForDays(new Date(), 7);
+
+  // Channel 1: includes Wednesdays
+  const ch1Events = allWeekEvents.filter(event => {
+    const day = getDayFromISODate(event.date);
+    // Skip Thursdays and Open Mics (except Friday Open Mic)
+    if (day === 4) return false;
+    const isOpenMic = event.name.toLowerCase().includes('open mic');
+    const isFridayOpenMic = isOpenMic && event.name.toLowerCase().includes('friday');
+    if (isOpenMic && !isFridayOpenMic) return false;
+    return true;
+  });
+
+  // Channel 2: Fri/Sat only (excludes Wednesdays and Friday Open Mic)
+  const ch2Events = allWeekEvents.filter(event => {
+    const day = getDayFromISODate(event.date);
+    // Skip Thursdays
+    if (day === 4) return false;
+    // Skip Wednesdays
+    if (day === 3) return false;
+    // Skip all Open Mics
+    if (event.name.toLowerCase().includes('open mic')) return false;
+    return true;
+  });
+
+  // Try to get monthly schedules and post summaries
+  const schedule1 = await getSchedule(scheduleId1);
+  const schedule2 = await getSchedule(scheduleId2);
+
+  // Post to channel 1
+  if (schedule1 && schedule1.assignments && ch1Events.length > 0) {
+    const summary1 = formatWeeklyShiftSummary(ch1Events, schedule1.assignments);
+    if (summary1) {
+      console.log(`Posting shift summary to channel 1: ${summary1.text}`);
+      await postMessage(channel1, summary1.text, summary1.blocks);
+    } else {
+      console.log('No assignments for channel 1 this week');
+    }
+  } else {
+    console.log(`No monthly schedule found for channel 1 (${scheduleId1}) or no events this week`);
+  }
+
+  // Post to channel 2
+  if (schedule2 && schedule2.assignments && ch2Events.length > 0) {
+    const summary2 = formatWeeklyShiftSummary(ch2Events, schedule2.assignments);
+    if (summary2) {
+      console.log(`Posting shift summary to channel 2: ${summary2.text}`);
+      await postMessage(channel2, summary2.text, summary2.blocks);
+    } else {
+      console.log('No assignments for channel 2 this week');
+    }
+  } else {
+    console.log(`No monthly schedule found for channel 2 (${scheduleId2}) or no events this week`);
   }
 }

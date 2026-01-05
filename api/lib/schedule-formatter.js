@@ -435,3 +435,84 @@ export function getAvailableSlotsWeekly(events, assignments = {}) {
 
   return slots;
 }
+
+/**
+ * Get day name from ISO date string
+ * @param {string} isoDate - ISO date string like "2026-01-07T20:00:00-06:00"
+ * @returns {string} - Day name like "Friday"
+ */
+function getDayName(isoDate) {
+  const datePart = isoDate.split('T')[0];
+  const [year, month, day] = datePart.split('-').map(Number);
+  const localDate = new Date(year, month - 1, day, 12, 0, 0);
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  return days[localDate.getDay()];
+}
+
+/**
+ * Format a weekly shift summary from monthly schedule assignments
+ * Shows "This week: Friday @person, Saturday @person" format
+ * @param {Array} events - Events for the week (with date property)
+ * @param {object} assignments - Map of dateKey (e.g., "1/7") to assignment array
+ * @returns {{ text: string, blocks: Array }|null} - Formatted message or null if no assignments
+ */
+export function formatWeeklyShiftSummary(events, assignments = {}) {
+  if (!events || events.length === 0) {
+    return null;
+  }
+
+  // Get unique dates from this week's events with their day names
+  const weekDates = new Map(); // dateKey -> dayName
+  for (const event of events) {
+    const dateKey = formatDateShort(event.date);
+    if (!weekDates.has(dateKey)) {
+      weekDates.set(dateKey, getDayName(event.date));
+    }
+  }
+
+  // Find assignments for this week's dates
+  const weekAssignments = [];
+  for (const [dateKey, dayName] of weekDates) {
+    if (assignments[dateKey]) {
+      const assigneeList = assignments[dateKey];
+      // Format assignees as Slack mentions
+      let mentions;
+      if (Array.isArray(assigneeList)) {
+        mentions = assigneeList.map(a => a.userId ? `<@${a.userId}>` : a.name).join(', ');
+      } else if (typeof assigneeList === 'string') {
+        mentions = assigneeList;
+      } else if (assigneeList && assigneeList.userId) {
+        mentions = `<@${assigneeList.userId}>`;
+      } else if (assigneeList && assigneeList.name) {
+        mentions = assigneeList.name;
+      }
+      if (mentions) {
+        weekAssignments.push({ dayName, mentions, dateKey });
+      }
+    }
+  }
+
+  if (weekAssignments.length === 0) {
+    return null;
+  }
+
+  // Sort by date order (use the original events order)
+  const dateOrder = [...weekDates.keys()];
+  weekAssignments.sort((a, b) => dateOrder.indexOf(a.dateKey) - dateOrder.indexOf(b.dateKey));
+
+  // Format the message
+  const shiftList = weekAssignments.map(a => `${a.dayName} ${a.mentions}`).join(', ');
+  const text = `This week: ${shiftList}`;
+
+  const blocks = [
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `*This week:* ${shiftList}`
+      }
+    }
+  ];
+
+  return { text, blocks };
+}
